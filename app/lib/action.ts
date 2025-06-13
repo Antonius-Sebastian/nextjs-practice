@@ -6,8 +6,17 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import postgres from "postgres";
 import { z } from "zod";
+import { createClient } from "@supabase/supabase-js";
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: "require" });
+
+const MAX_FILE_SIZE = 50000000;
+const ACCEPTED_IMAGE_TYPES = [
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+];
 
 // Zod Schemas
 const FormSchema = z.object({
@@ -22,9 +31,24 @@ const FormSchema = z.object({
   date: z.string(),
 });
 
+const CustomerSchema = z.object({
+  id: z.string(),
+  name: z.string({ message: "Please enter customer's name." }),
+  email: z.string().email({ message: "Please enter customer's email." }),
+  image: z
+    .any()
+    .refine((file) => file?.size <= MAX_FILE_SIZE, `Max image size is 5MB.`)
+    .refine(
+      (file) => ACCEPTED_IMAGE_TYPES.includes(file?.type),
+      "Only .jpg, .jpeg, .png and .webp formats are supported."
+    ),
+});
+
 const CreateInvoice = FormSchema.omit({ id: true, date: true });
 
 const UpdateInvoice = FormSchema.omit({ id: true, date: true });
+
+const CreateCustomer = CustomerSchema.omit({ id: true });
 
 export type State = {
   errors?: {
@@ -34,6 +58,16 @@ export type State = {
   };
   message?: string | null;
 };
+
+export type CustomerState = {
+  errors?: {
+    name?: string[];
+    email?: string[];
+    image?: string[];
+  };
+  message?: string | null;
+};
+
 // Server actions
 export async function createInvoice(prevState: State, formData: FormData) {
   const validatedFields = CreateInvoice.safeParse({
@@ -131,4 +165,63 @@ export async function authenticate(
     }
     throw error;
   }
+}
+
+// Server actions
+export async function createCustomer(
+  prevState: CustomerState,
+  formData: FormData
+) {
+  const validatedFields = CreateCustomer.safeParse({
+    name: formData.get("name"),
+    email: formData.get("email"),
+    image: formData.get("image"),
+  });
+
+  // If form validation fails, return errors early. Otherwise, continue.
+  if (!validatedFields.success) {
+    return {
+      errors: validatedFields.error.flatten().fieldErrors,
+      message: "Missing Fields. Failed to Create Customer.",
+    };
+  }
+  const { name, email, image } = validatedFields.data;
+
+  // Create Supabase client
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+
+  const fileExt = image.name.split(".").pop();
+  const fileName = `${Date.now()}.${fileExt}`;
+  const filePath = `customers/${fileName}`;
+
+  // Upload file using standard upload
+  const { error } = await supabase.storage
+    .from("customer-profile")
+    .upload(filePath, image);
+  if (error) {
+    console.error(error.message);
+    return { message: "Supabase Upload Error" };
+  }
+
+  const { data: publicUrlData } = supabase.storage
+    .from("customer-profile")
+    .getPublicUrl(filePath);
+
+  const publicUrl = publicUrlData.publicUrl;
+
+  try {
+    await sql`
+      INSERT INTO customers (name, email, image_url)
+      VALUES (${name}, ${email}, ${publicUrl})
+    `;
+  } catch (error) {
+    console.error(error);
+    return { message: "Database Error: Failed to Create Customer." };
+  }
+
+  revalidatePath("/dashboard/customers");
+  redirect("/dashboard/customers");
 }
