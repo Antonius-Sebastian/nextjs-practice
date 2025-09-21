@@ -10,6 +10,7 @@ import { createClient } from "@supabase/supabase-js";
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: "require" });
 
+//
 const MAX_FILE_SIZE = 50000000;
 const ACCEPTED_IMAGE_TYPES = [
   "image/jpeg",
@@ -44,12 +45,12 @@ const CustomerSchema = z.object({
     ),
 });
 
+// Form schemas
 const CreateInvoice = FormSchema.omit({ id: true, date: true });
-
 const UpdateInvoice = FormSchema.omit({ id: true, date: true });
-
 const CreateCustomer = CustomerSchema.omit({ id: true });
 
+// States
 export type State = {
   errors?: {
     customerId?: string[];
@@ -68,7 +69,7 @@ export type CustomerState = {
   message?: string | null;
 };
 
-// Server actions
+// Invoice server actions
 export async function createInvoice(prevState: State, formData: FormData) {
   const validatedFields = CreateInvoice.safeParse({
     customerId: formData.get("customerId"),
@@ -147,7 +148,7 @@ export async function deleteInvoice(id: string) {
   }
 }
 
-// Auth
+// Auth server actions
 export async function authenticate(
   prevState: string | undefined,
   formData: FormData
@@ -167,7 +168,7 @@ export async function authenticate(
   }
 }
 
-// Server actions
+// Customer server actions
 export async function createCustomer(
   prevState: CustomerState,
   formData: FormData
@@ -185,6 +186,7 @@ export async function createCustomer(
       message: "Missing Fields. Failed to Create Customer.",
     };
   }
+
   const { name, email, image } = validatedFields.data;
 
   // Create Supabase client

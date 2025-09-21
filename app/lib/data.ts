@@ -11,6 +11,8 @@ import { formatCurrency } from "./utils";
 
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: "require" });
 
+const ITEMS_PER_PAGE = 6;
+
 export async function fetchRevenue() {
   try {
     // Artificially delay a response for demo purposes.
@@ -85,7 +87,6 @@ export async function fetchCardData() {
   }
 }
 
-const ITEMS_PER_PAGE = 6;
 export async function fetchFilteredInvoices(
   query: string,
   currentPage: number
